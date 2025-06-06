@@ -3,6 +3,7 @@ import * as acorn from 'acorn'; // Import acorn for type assertions
 import { ExpressionParser, ExpressionInfo, ParseResult } from './evaluator/parser';
 import { SafeEvaluator } from './evaluator/engine';
 import { ResultDecorator, EvaluationResultDisplay } from './decorations/resultDecorator';
+import { TimeTravelPanel } from './ui/timeTravelPanel';
 
 // Global state for live evaluation
 let isLiveEvaluationActive: boolean = false;
@@ -12,6 +13,10 @@ let debounceTimer: NodeJS.Timeout | undefined;
 
 // Global diagnostics collection, initialized in activate
 let diagnostics: vscode.DiagnosticCollection;
+
+// Time travel debugging state
+let isTimeTravelEnabled: boolean = false;
+let timeTravelStatusBarItem: vscode.StatusBarItem;
 
 async function evaluateEditor(
     editor: vscode.TextEditor,
@@ -140,6 +145,31 @@ export function activate(context: vscode.ExtensionContext) {
     liveEvaluationStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     context.subscriptions.push(liveEvaluationStatusBarItem);
 
+    // Initialize time travel status bar item
+    timeTravelStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+    timeTravelStatusBarItem.command = 'jsEvaluator.showTimeTravelPanel';
+    context.subscriptions.push(timeTravelStatusBarItem);
+
+    // Enhanced text document change handler with time travel integration
+    const enhancedTextDocumentChange = (event: vscode.TextDocumentChangeEvent) => {
+        if (isLiveEvaluationActive && event.document === vscode.window.activeTextEditor?.document) {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            debounceTimer = setTimeout(async () => {
+                const currentEditor = vscode.window.activeTextEditor;
+                if (currentEditor) {
+                    await evaluateEditor(currentEditor, parser, evaluator, resultDecorator, diagnostics);
+                    
+                    // Update time travel panel if open
+                    if (TimeTravelPanel.currentPanel && isTimeTravelEnabled) {
+                        TimeTravelPanel.currentPanel.update();
+                    }
+                }
+            }, 500);
+        }
+    };
+
     const evaluateSelectionCommand = vscode.commands.registerCommand('jsEvaluator.evaluateSelection', async () => {
         const editor = vscode.window.activeTextEditor;
         if (editor) {
@@ -169,19 +199,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (textDocumentChangeDisposable) {
             textDocumentChangeDisposable.dispose();
         }
-        textDocumentChangeDisposable = vscode.workspace.onDidChangeTextDocument(event => {
-            if (isLiveEvaluationActive && event.document === vscode.window.activeTextEditor?.document) {
-                if (debounceTimer) {
-                    clearTimeout(debounceTimer);
-                }
-                debounceTimer = setTimeout(async () => {
-                    const currentEditor = vscode.window.activeTextEditor;
-                    if (currentEditor) {
-                         await evaluateEditor(currentEditor, parser, evaluator, resultDecorator, diagnostics);
-                    }
-                }, 500);
-            }
-        });
+        textDocumentChangeDisposable = vscode.workspace.onDidChangeTextDocument(enhancedTextDocumentChange);
         context.subscriptions.push(textDocumentChangeDisposable);
         vscode.window.showInformationMessage('JavaScript Live Evaluation Started.');
     });
@@ -219,11 +237,53 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    // Time Travel Debugging Commands
+    const toggleTimeTravelCommand = vscode.commands.registerCommand('jsEvaluator.toggleTimeTravel', () => {
+        isTimeTravelEnabled = !isTimeTravelEnabled;
+        
+        if (isTimeTravelEnabled) {
+            evaluator.enableTimeTravel();
+            timeTravelStatusBarItem.text = "$(history) Time Travel";
+            timeTravelStatusBarItem.tooltip = "Time Travel Debugging is Active - Click to open panel";
+            timeTravelStatusBarItem.show();
+            vscode.window.showInformationMessage('Time Travel Debugging enabled! Start coding to see execution history.');
+            
+            // Auto-open the time travel panel
+            TimeTravelPanel.createOrShow(context.extensionUri, evaluator.getTimeTravelDebugger());
+        } else {
+            evaluator.disableTimeTravel();
+            timeTravelStatusBarItem.hide();
+            vscode.window.showInformationMessage('Time Travel Debugging disabled.');
+        }
+    });
+
+    const showTimeTravelPanelCommand = vscode.commands.registerCommand('jsEvaluator.showTimeTravelPanel', () => {
+        if (!isTimeTravelEnabled) {
+            vscode.window.showInformationMessage('Enable Time Travel Debugging first.');
+            return;
+        }
+        TimeTravelPanel.createOrShow(context.extensionUri, evaluator.getTimeTravelDebugger());
+    });
+
+    const clearTimeTravelHistoryCommand = vscode.commands.registerCommand('jsEvaluator.clearTimeTravelHistory', () => {
+        evaluator.clearTimeTravelHistory();
+        vscode.window.showInformationMessage('Time travel history cleared.');
+        
+        // Update the panel if it's open
+        if (TimeTravelPanel.currentPanel) {
+            TimeTravelPanel.currentPanel.update();
+        }
+    });
+
+
     context.subscriptions.push(
         evaluateSelectionCommand, 
         startLiveEvaluationCommand, 
         stopLiveEvaluationCommand,
-        clearAllResultsCommand
+        clearAllResultsCommand,
+        toggleTimeTravelCommand,
+        showTimeTravelPanelCommand,
+        clearTimeTravelHistoryCommand
     );
 }
 

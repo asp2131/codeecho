@@ -1,10 +1,35 @@
 import * as vm from 'vm';
-import * as vscode from 'vscode'; // Added import for vscode types
+import * as vscode from 'vscode';
+import { TimeTravelDebugger, ExecutionStep } from './timeTravel';
 
 /**
- * Safely evaluates JavaScript expressions in a sandboxed environment.
+ * Safely evaluates JavaScript expressions in a sandboxed environment with time travel debugging support.
  */
 export class SafeEvaluator {
+  private timeTravelDebugger: TimeTravelDebugger;
+  private isTimeTravelEnabled: boolean = false;
+
+  constructor() {
+    this.timeTravelDebugger = new TimeTravelDebugger();
+  }
+
+  // Time travel control methods
+  enableTimeTravel(): void {
+    this.isTimeTravelEnabled = true;
+  }
+
+  disableTimeTravel(): void {
+    this.isTimeTravelEnabled = false;
+  }
+
+  getTimeTravelDebugger(): TimeTravelDebugger {
+    return this.timeTravelDebugger;
+  }
+
+  clearTimeTravelHistory(): void {
+    this.timeTravelDebugger.clearHistory();
+  }
+
   public createContext(logOutput?: (message: string, expressionRange?: vscode.Range) => void): vm.Context {
     // Create a basic context with a custom console.log if a logger is provided
     const sandbox: any = {
@@ -55,20 +80,33 @@ export class SafeEvaluator {
    */
   public evaluate(expressionText: string, expressionRange: vscode.Range, context: vm.Context): any {
     // Store the current expression's range on the context so the sandbox logger can access it
-    // This is a bit of a hack; a cleaner way might involve a custom VM or more intricate context management.
     (context as any).__currentExpressionRange = expressionRange;
+
+    let result: any;
+    let error: string | undefined;
 
     try {
       const script = new vm.Script(expressionText);
-      const result = script.runInContext(context, { timeout: 1000 }); // 1 second timeout
-      // For expressions, the result is directly returned. 
-      // For statements like assignments (let a = 10), it's undefined.
-      return { result };
+      result = script.runInContext(context, { timeout: 1000 }); // 1 second timeout
     } catch (e: any) {
-      return { error: e.message || String(e) };
+      error = e.message || String(e);
     } finally {
-      // It's important to clean up any properties we set on the context if they are temporary
+      // Clean up the temporary range property
       delete (context as any).__currentExpressionRange;
     }
+
+    // Record execution step for time travel debugging if enabled
+    if (this.isTimeTravelEnabled) {
+      console.log('[TimeTravelDebugger] Recording step for:', expressionText);
+      this.timeTravelDebugger.recordStep(
+        expressionText,
+        expressionRange,
+        result,
+        context,
+        error
+      );
+    }
+
+    return error ? { error } : { result };
   }
 }

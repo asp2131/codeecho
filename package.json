@@ -43,6 +43,21 @@
         "command": "jsEvaluator.clearAllResults",
         "title": "Koda.js: Clear All Results",
         "category": "Koda.js"
+      },
+      {
+        "command": "jsEvaluator.toggleTimeTravel",
+        "title": "Koda.js: Toggle Time Travel Debugging",
+        "category": "Koda.js"
+      },
+      {
+        "command": "jsEvaluator.showTimeTravelPanel",
+        "title": "Koda.js: Show Time Travel Panel",
+        "category": "Koda.js"
+      },
+      {
+        "command": "jsEvaluator.clearTimeTravelHistory",
+        "title": "Koda.js: Clear Time Travel History",
+        "category": "Koda.js"
       }
     ],
     "keybindings": [
@@ -50,6 +65,12 @@
         "command": "jsEvaluator.startLiveEvaluation",
         "key": "ctrl+shift+k",
         "mac": "cmd+shift+k",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "jsEvaluator.toggleTimeTravel",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
         "when": "editorTextFocus"
       }
     ],
